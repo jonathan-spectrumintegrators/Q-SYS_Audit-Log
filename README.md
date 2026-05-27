@@ -37,7 +37,7 @@ Remember, everything is case-sensitive.
 * `Parametric_Equalizer.type.1.String`
 
 ### Usage Example
-![Usage Example](./example.gif)
+![Usage Example](https://raw.githubusercontent.com/jonathan-spectrumintegrators/Q-SYS_Audit-Log/main/example.gif)
 
 ### Reporting Interval & Logging
 If the Changed Controls Report property is non-zero, then at that interval a report will be logged showing which controls have changed, their current value and the time it was last changed. If the control changed multiple times since the last report, only the most recent change is shown. If no controls have been changed, the report will not be generated.
