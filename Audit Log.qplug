@@ -1,0 +1,464 @@
+--[[
+    Control change audit log
+    Copyright (C) 2026 Jonathan Dean - Spectrum Integrators (jonathand@spectrumintegrators.com)
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+]]--
+
+
+--[[ DEBUG LEVELS ]] --
+-- Verbosity levels for debugging
+DebugLevels = {"None", "Debugging", "Function Calls", "All"}
+DebugLevelNone = DebugLevels[1] -- Does not print any debug data
+DebugLevelDebugging = DebugLevels[2] -- Prints debugging messages
+DebugLevelFunctionCalls = DebugLevels[3] -- Prints function call notifications
+DebugLevelAll = DebugLevels[4] -- Prints both function call notifications and debugging messages
+
+--[[ PLUGIN DATA ]] --
+PluginInfo = {
+    Name = "Audit Log",
+    Version = "1.1",
+    BuildVersion = "1.1.0.0",
+    Id = "171c90ad-2f67-42a6-b59a-9455d5112c6f",
+    Author = "Jonathan Dean (Spectrum Integrators jonathand@spectrumintegrators.com)",
+    Description = "Control change audit log",
+    Manufacturer = "Generic",
+    Model = "Various"
+}
+PageNames = {"Controls", "Report"} -- List the pages within the plugin
+
+--[[ DEBUGGING FUNCTIONS ]] --
+
+-- Return a comma-separated string list from an arbitrary number of inputs
+function BuildStringList(...)
+    local args = {...}
+    if #args == 0 then
+        -- no items given, quit early
+        return ""
+    end
+    local ret = ""
+    -- Go through all but the last item in the list
+    for i = 1, #args - 1 do
+        -- Add the next element to the list (with a comma since we know it's not the last item)
+        ret = string.format("%s%s, ", ret, tostring(args[i]))
+    end
+    -- Add the final element to the list (no comma because it's the last item)
+    ret = string.format("%s%s", ret, tostring(args[#args]))
+    return ret
+end
+
+-- Print a debug message
+function DBG(msg, ...)
+    local args = {...}
+    if Properties["Debug Print"].Value == DebugLevelAll or Properties["Debug Print"].Value == DebugLevelDebugging then
+        print("DEBUG: " .. msg .. " " .. BuildStringList(...))
+    end
+end
+
+-- Print a function call message
+function FUNC(msg, ...)
+    local args = {...}
+    if Properties["Debug Print"].Value == DebugLevelAll or Properties["Debug Print"].Value == DebugLevelFunctionCalls then
+        print(" FUNC: " .. msg .. " " .. BuildStringList(...))
+    end
+end
+
+-- Print an error message (but don't throw an actual error)
+function ERR(msg, ...)
+    local args = {...}
+    print("\aERROR: " .. msg .. " " .. BuildStringList(...))
+end
+
+--[[ PLUGIN SETUP ]] --
+
+-- Define the color of the plugin object in the design
+function GetColor(props)
+    return {0, 139, 139}
+end
+
+-- The name that will initially display when dragged into a design
+function GetPrettyName(props)
+    return PluginInfo.Name
+end
+
+-- Returns an ordered table of the page names
+function GetPages(props)
+    local pages = {}
+    for ix, name in ipairs(PageNames) do
+        table.insert(pages, {
+            name = PageNames[ix]
+        })
+    end
+    return pages
+end
+
+-- Define User configurable Properties of the plugin
+function GetProperties()
+    local props = {}
+    -- Add debug verbosity property
+    table.insert(props, {
+        Name = "Debug Print",
+        Type = "enum",
+        Choices = DebugLevels,
+        Value = DebugLevelNone,
+        Comment = "Debug verbosity level"
+    })
+    table.insert(props, {
+        Name = "Count",
+        Type = "integer",
+        Min = 2,
+        Max = 100,
+        Value = 5,
+        Comment = "The number of controls to monitor"
+    })
+    table.insert(props, {
+        Name = "Report Interval",
+        Type = "integer",
+        Min = 0,
+        Max = 86400,
+        Value = 5,
+        Comment = "Seconds between reporting value changes (0 disables automatic reporting)"
+    })
+    return props
+end
+
+-- Optional function to define pins on the plugin that are not connected to a Control
+function GetPins(props)
+    local pins = {}
+    return pins
+end
+
+-- Optional function to update available properties when properties are altered by the user
+function RectifyProperties(props)
+    if props.plugin_show_debug.Value == false then
+        -- Don't show debug verbosity if debugging is disabled
+        props["Debug Print"].IsHidden = true
+        props["Debug Print"].Value = DebugLevelNone
+    else
+        -- Show debug verbosity when debugging is enabled
+        props["Debug Print"].IsHidden = false
+    end
+    return props
+end
+
+-- Optional function to define components used within the plugin
+function GetComponents(props)
+    -- No components used here
+    local components = {}
+    return components
+end
+
+-- Optional function to define wiring of components used within the plugin
+function GetWiring(props)
+    -- No wiring used here
+    local wiring = {}
+    return wiring
+end
+
+--[[ CONTROLS ]] --
+
+function GetControls(props)
+    local ctrls = {}
+    table.insert(ctrls, {
+        Name = "Generate Report",
+        ControlType = "Button",
+        ButtonType = "Trigger",
+        UserPin = true,
+        PinStyle = "Input"
+    })
+    table.insert(ctrls, {
+        Name = "ID",
+        ControlType = "Text",
+        Count = tonumber(props["Count"].Value),
+        UserPin = false
+    })
+    table.insert(ctrls, {
+        Name = "Changed Controls Report",
+        ControlType = "Text",
+        UserPin = true,
+        PinStyle = "Output"
+    })
+    table.insert(ctrls, {
+        Name = "Change Detected",
+        ControlType = "Indicator",
+        IndicatorType = "Led",
+        UserPin = true,
+        PinStyle = "Output"
+    })
+    table.insert(ctrls, {
+        Name = "Report to Log",
+        ControlType = "Button",
+        ButtonType = "Toggle",
+        UserPin = true,
+        PinStyle = "Both"
+    })
+    return ctrls
+end
+
+--[[ CONTROL LAYOUT ]] --
+
+function GetControlLayout(props)
+    local layout = {}
+    local graphics = {}
+    local CurrentPage = PageNames[props["page_index"].Value]
+    local rowHeight = 16
+    local gapSize = 4
+    local margin = 4
+    local labelWidth = 40
+    local textBoxWidth = 120
+    local buttonWidth = 36
+    local reportWidth = 300
+    local reportHeight = 100
+    local wideLabelMultiplier = 2.5
+
+    if CurrentPage == "Controls" then
+        table.insert(graphics, {
+            Type = "Text",
+            Text = "Generate Report",
+            Position = {margin, margin},
+            Size = {wideLabelMultiplier*labelWidth, rowHeight},
+            HTextAlign = "Right"
+        })
+        layout["Generate Report"] = {
+            Style = "Button",
+            Position = {margin + wideLabelMultiplier*labelWidth + 2 * gapSize, margin},
+            Size = {buttonWidth, rowHeight}
+        }
+
+        table.insert(graphics, {
+            Type = "Text",
+            Text = "Report to Log",
+            Position = {margin, margin + rowHeight + gapSize},
+            Size = {wideLabelMultiplier*labelWidth, rowHeight},
+            HTextAlign = "Right"
+        })
+        layout["Report to Log"] = {
+            Style = "Button",
+            Position = {margin + wideLabelMultiplier*labelWidth + 2 * gapSize, margin + rowHeight + gapSize},
+            Size = {buttonWidth, rowHeight}
+        }
+
+        table.insert(graphics, {
+            Type = "Text",
+            Text = "Change Detected",
+            Position = {margin, margin + 2*(rowHeight + gapSize)},
+            Size = {wideLabelMultiplier*labelWidth, rowHeight},
+            HTextAlign = "Right"
+        })
+        layout["Change Detected"] = {
+            Style = "Led",
+            Position = {margin + wideLabelMultiplier*labelWidth + 2 * gapSize + (buttonWidth / 2) - (rowHeight / 2), margin + 2*(rowHeight + gapSize)},
+            Size = {rowHeight, rowHeight}
+        }
+
+        for i = 1, tonumber(props["Count"].Value) do
+            table.insert(graphics, {
+                Type = "Text",
+                Text = string.format("% 4d:", i),
+                Position = {margin, margin + (rowHeight + gapSize) * (i+2)},
+                Size = {labelWidth, rowHeight}
+            })
+            layout["ID " .. tostring(i)] = {
+                Style = "Text",
+                Position = {margin + labelWidth + 2 * gapSize, margin + (rowHeight + gapSize) * (i+2)},
+                Size = {textBoxWidth, rowHeight}
+            }
+        end
+    elseif CurrentPage == "Report" then
+        table.insert(graphics, {
+            Type="text",
+            Text = "Changed Controls Report",
+            Position = {margin, margin},
+            Size = {reportWidth, rowHeight}
+        })
+        layout["Changed Controls Report"] = {
+            Style = "Text",
+            Position = {margin, margin + gapSize + rowHeight},
+            Size = {reportWidth, reportHeight},
+            HTextAlign = "Left",
+            VTextAlign = "Top"
+        }
+    end
+    return layout, graphics
+end
+
+--[[ RUNTIME CODE ]] --
+
+if not Controls then
+    goto nocontrols
+end
+
+local date = require("date")
+-- Format to use for the date & time in timestamps (see https://tieske.github.io/date/#dateObject.fmt)
+local timestampFormat = "${iso}"
+
+-- Reference to all connected controls so if we get disconnected later we can remove ourselves from their EventHandlers
+connectedControls = {}
+
+-- List of control values that have changed and the timestamp (nil if nothing has changed)
+changedValues = nil
+
+-- Monitor the changedValues list, periodically generate a report if it is not empty
+valueMonitorTimer = Timer.New()
+
+-- These are the types of controls that will be set to use the Trigger event handler
+triggerControls = "Trigger"
+
+-- Add a changed value to the changed values list for reporting later
+function AddChangedValue(componentname, controlname, controlproperty, controlpropertyvalue, isTrigger)
+    FUNC("AddChangedValue", componentname, controlname, controlproperty, controlpropertyvalue, isTrigger)
+    if changedValues == nil then
+        changedValues = {}
+    end
+    local sep = "."
+    if (isTrigger) then sep = ":" end
+    changedValues[string.format("%s.%s%s%s", componentname, controlname, sep, controlproperty)] = {
+        ["Timestamp"] = date(),
+        ["Value"] = controlpropertyvalue
+    }
+end
+
+-- Called when a subscribed Trigger control is triggered
+function TriggerHandler(i, componentname, controlname, ctl)
+    FUNC("TriggerHandler", i, componentname, controlname)
+    AddChangedValue(componentname, controlname, "Trigger", "Triggered", true)
+end
+
+-- Called when a non-Trigger subscribed control's value changes
+function ValueHandler(i, componentname, controlname, controlproperty, ctl)
+    FUNC("ValueHandler", i, componentname, controlname, controlproperty)
+    AddChangedValue(componentname, controlname, controlproperty, ctl[controlproperty], false)
+end
+
+-- Split the given string on period characters and returns three parts (two plus nil if one dot, three if two dots)
+-- returns nil if an incorrect pattern is found
+function SplitControlName(ctlname)
+    FUNC("SplitControlName", ctlname)
+    -- <component>.<control (may contain dots)>[.<property>]
+    local component, rest = ctlname:match("^([^.]+)%.(.+)$")
+    if component ~= nil then
+        local control, property = rest:match("^(.+)%.([^.]+)$")
+        if control ~= nil then
+            -- last segment is the property
+            return component, control, property
+        end
+        -- two-segment trigger, no property
+        return component, rest, nil
+    end
+end
+
+function ConnectToControls()
+    FUNC("ConnectToControls")
+    -- first, disconnect any existing event handlers and clear the list
+    for _, ctl in ipairs(connectedControls) do
+        if ctl ~= false then
+            ctl.EventHandler = nil
+        end
+    end
+    connectedControls = {}
+
+    for i = 1, tonumber(Properties["Count"].Value) do
+        -- the i here is not only the control index but it's also the index into the connectedControls array
+        ctlID = Controls["ID"][i]
+
+        -- Make sure there's something specified, skip if not
+        if ctlID.String == "" then
+            goto nextloop
+        end
+
+        -- Separate the component, control, and property names and make sure it's valid
+        local componentname, controlname, controlproperty = SplitControlName(ctlID.String)
+        if componentname == nil then
+            ERR("Invalid component & control name:", ctlID.String)
+            goto nextloop
+        end
+
+        -- we don't pcall this because Component.New always returns a component object
+        component = Component.New(componentname)
+        -- We do this nonsense to validate that the component returned by Component.New is actually a valid component
+        local x, y, z = pairs(component)
+        if not pcall(x, y, z) then
+            ERR("Component does not exist or is not accessible:", componentname)
+            goto nextloop
+        end
+
+        -- Make sure the control exists on the component
+        if component[controlname] == nil or component[controlname].Type == nil then
+            ERR(string.format("Control does not exist on component %s:", componentname), controlname)
+            goto nextloop
+        end
+
+        local ctl = component[controlname] -- short-named variable so I don't have to keep typing all that long name out
+        DBG(string.format("Found control %s in component %s, it is type %s", controlname, componentname, ctl.Type))
+
+        -- Add the control to our list of handled controls
+        connectedControls[i] = ctl
+
+        -- Attach the appropriate event handler to the control
+        if triggerControls:find(ctl.Type) then
+            DBG(string.format("Adding trigger handler to %s", ctlID.String))
+            ctl.EventHandler = function()
+                TriggerHandler(i, componentname, controlname, ctl)
+            end
+        else
+            if (controlproperty == nil) then
+                ERR(string.format("Property must be specified for controls other than triggers (%s.%s)", component, controlname))
+                goto nextloop
+            end
+            DBG(string.format("Adding value handler to %s", ctlID.String))
+            ctl.EventHandler = function()
+                ValueHandler(i, componentname, controlname, controlproperty, ctl)
+            end
+        end
+
+        ::nextloop:: -- goto label for when a loop needs to be continued early
+    end
+end
+
+-- Compile all changed controls and generate the report to log
+function ReportChangedControls()
+    FUNC("ReportChangedControls")
+    if (changedValues == nil) then
+        Controls["Change Detected"].Boolean = false
+        return
+    end
+    local report = "Changed Controls:"
+    for n, v in pairs(changedValues) do
+        report = string.format("%s\n  (%s) %s = %s", report, v.Timestamp:fmt(timestampFormat), n, v.Value)
+        DBG(string.format("%s: %s = %s", v.Timestamp, n, v.Value))
+    end
+    changedValues = nil
+    Controls["Change Detected"].Boolean = true
+    print(report)
+    if Controls["Report to Log"].Boolean then
+        Log.Message(report)
+    end
+    Controls["Changed Controls Report"].String = report
+end
+
+-- add event handlers to each ID control
+for i, ctl in pairs(Controls["ID"]) do
+    ctl.EventHandler = ConnectToControls
+end
+
+-- Do all the stuff when the script first runs
+ConnectToControls()
+
+valueMonitorTimer.EventHandler = ReportChangedControls
+if Properties["Report Interval"].Value > 0 then
+    valueMonitorTimer:Start(Properties["Report Interval"].Value)
+end
+Controls["Generate Report"].EventHandler = ReportChangedControls
+
+::nocontrols::
